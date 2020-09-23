@@ -1,3 +1,4 @@
+
 import React, { Component } from 'react'
 import Main from '../template/Main'
 import axios from 'axios'
@@ -12,7 +13,9 @@ const headerProps = {
 }
 
 const baseUrl = 'http://localhost:3001/projetos'
-const baseUrlAti = 'http://localhost:3002/atividades'
+
+const urlGetQtdeAtividade = 'http://localhost:3001/getQtdeAtividade'
+const urlGetQtdeAtividadeFinalizadas = 'http://localhost:3001/getQtdeAtividadeFinalizadas'
 
 const initialState = {
     projeto: { name: '', dataIni: '', dataFim: '' },
@@ -27,33 +30,26 @@ export default class ProjetosCrud extends Component {
     state = { ...initialState }
 
     componentWillMount() {
-  
+
         axios(baseUrl).then(resp => {
+
             var list = []
-            for(let i of resp.data){
-                axios(baseUrlAti).then(r => {
+            for (let i of resp.data) {
 
-                    let filtraAtividades = obj => obj.idProjeto == i.id
-                    let filtraAtividadesFinalizadas = obj => obj.finalizada
-                    let dados = r.data
-                    let atividadesDoProjeto = dados.filter(filtraAtividades)
-                    let qtdeAtividades = atividadesDoProjeto.length
+                let qtdeAtividades = 0
+                let qtdeAtividadesFinalizadas = 0
 
-                    let atividadesFinalizadas = atividadesDoProjeto.filter(filtraAtividadesFinalizadas)
-                    let qtdeAtividadesFinalizadas = atividadesFinalizadas.length
-                    
-                    i.progress = (qtdeAtividadesFinalizadas * 100 ) / qtdeAtividades
-                    list.push(i);
-
-                    this.setState({ list: list })
-                }).catch(console.log)
+                axios(`${urlGetQtdeAtividade}/${i.id}`).then(resp => {
+                    qtdeAtividades = resp.data.QtdeAtividade
+                    axios(`${urlGetQtdeAtividadeFinalizadas}/${i.id}`).then(resp => {
+                        qtdeAtividadesFinalizadas = resp.data.QtdeAtividadeFinalizadas
+                        i.progresso = Math.floor((qtdeAtividadesFinalizadas * 100) / qtdeAtividades, 2)
+                        list.push(i);
+                        this.setState({ list: list })
+                    }).catch(resp => alert(resp.response.data))
+                }).catch(resp => alert(resp.response.data))
             }
-        }).catch(console.log)
-   
-    }
-
-    clear() {
-        this.setState({ projeto: initialState.projeto })
+        }).catch(resp => alert(resp.response.data))
     }
 
     save() {
@@ -61,16 +57,26 @@ export default class ProjetosCrud extends Component {
         const method = projeto.id ? 'put' : 'post' // Se o ID estiver definido usa put para alterar, caso contrario usa  post para incluir
         const url = projeto.id ? `${baseUrl}/${projeto.id}` : baseUrl
         axios[method](url, projeto).then(resp => {
-            const list = this.getUpdateList(resp.data)
-            this.setState({ projeto: initialState.projeto, list })
-        }).catch(console.log)
+            this.setState({ projeto: initialState.projeto })
+            this.componentWillMount()
+        }).catch(resp => alert(resp.response.data))
     }
 
-    getUpdateList(projeto, add = true) {
-        const list = this.state.list.filter(p => p.id != projeto.id)
-        if (add)
-            list.unshift(projeto)
-        return list
+    delete(projeto) {
+        axios.delete(`${baseUrl}/${projeto.id}`).then(resp => {
+            this.getUpdateList()
+        }).catch(resp => alert(resp.response.data))
+    }
+
+    getUpdateList() {
+        axios(baseUrl).then(resp => {
+            this.setState({ list: resp.data })
+
+        }).catch(resp => alert(resp.response.data))
+    }
+
+    load(projeto) { 
+        this.setState({ projeto })
     }
 
     updateField(event) {
@@ -79,15 +85,28 @@ export default class ProjetosCrud extends Component {
         this.setState({ projeto })
     }
 
+    clear() { 
+        this.setState({ projeto: initialState.projeto })
+    }
+
+    addAtividades(id) {
+        idRouter = id
+
+        this.setState({
+            redirect: true
+        })
+    }
+
     renderForm() {
+        const dtIni = moment(this.state.projeto.dataIni).format('YYYY-MM-DD')
+        const dtFim = moment(this.state.projeto.dataFim).format('YYYY-MM-DD')
         if (this.state.redirect) {
             return <Redirect to={`/Atividades/${idRouter}`} />
         } else {
             return (
-                
+
                 <div className="form">
                     <div className="row">
-
                         <div className="col-12 col-sm-12 col-md-12 col-lg-12 col-xl-8">
                             <div className="form-group">
                                 <label>Nome do Projeto</label>
@@ -104,7 +123,7 @@ export default class ProjetosCrud extends Component {
                                 <label>Data Início</label>
                                 <input type="Date" className="form-control"
                                     name="dataIni"
-                                    value={this.state.projeto.dataIni}
+                                    value={dtIni}
                                     onChange={e => this.updateField(e)}>
                                 </input>
                             </div>
@@ -115,7 +134,7 @@ export default class ProjetosCrud extends Component {
                                 <label>Data Término</label>
                                 <input type="Date" className="form-control"
                                     name="dataFim"
-                                    value={this.state.projeto.dataFim}
+                                    value={dtFim}
                                     onChange={e => this.updateField(e)}>
                                 </input>
                             </div>
@@ -129,29 +148,19 @@ export default class ProjetosCrud extends Component {
                                 onClick={e => this.save(e)}>
                                 Salvar
                            </button>
-                           
-                            <button className="btn btn-light ml-2" 
-                                onClick={e => this.clear(e)}>
+
+                            <button className="btn btn-light ml-2"
+                                onClick={e => {
+                                    this.clear(e)
+                                }}>
                                 Cancelar
-                           </button>                           
+                           </button>                       
+                            
                         </div>
                     </div>
                 </div>
-
             )
         }
-    }
-
-    load(projeto) {
-        this.setState({ projeto })
-    }
-
-    remove(projeto) {
-
-        axios.delete(`${baseUrl}/${projeto.id}`).then(resp => {
-            const list = this.getUpdateList(projeto, false)
-            this.setState({ list })
-        })
     }
 
     renderTable() {
@@ -175,69 +184,64 @@ export default class ProjetosCrud extends Component {
         )
     }
 
-    addAtividades(id) {
-        idRouter = id
-        
-        this.setState({
-            redirect: true
-        })
-
-    }
-
     renderRows() {
-
-
         return this.state.list.map(projeto => {
-            var prog = projeto.progress ? projeto.progress : 0
-            var width = { width: prog + '%' }
+            let borderSize = { height: 8 + 'px' };
+            var width = { width: projeto.progresso + '%' }
 
-            function statusProjeto() {
-                return (moment( Date() ).diff(projeto.dataFim, 'days' ) > 0 && projeto.progress != 100)
+            function statusProjeto(pProjeto) {
+                return (moment(Date()).diff(pProjeto.dataFim, 'days') > 0 && pProjeto.progresso != 100)
             }
-            
-            return ( 
+
+            function labelProgresso(pProjeto) {
+                return isNaN(pProjeto.progresso) ? 0 : pProjeto.progresso
+            }
+
+            return (
                 <tr key={projeto.id}>
-                    <td>{projeto.id}</td>
-                    <td>{projeto.name}</td>
-                    <td>{projeto.dataIni}</td>
-                    <td>{projeto.dataFim}</td>
-                    <td class="text-center">
-                        <div class="progress">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style={width}  aria-valuenow="10" aria-valuemin="0" aria-valuemax="100"></div>
+                    <td><div className="mt-3">{projeto.id}</div></td>
+                    <td><div className="mt-3">{projeto.name}</div></td>
+                    <td><div className="mt-3">{moment(projeto.dataIni).format('DD/MM/YYYY')}</div></td>
+                    <td><div className="mt-3">{moment(projeto.dataFim).format('DD/MM/YYYY')}</div></td>
+                    <td >
+                        <div class="align-self-end text-right mt-2">
+                            {labelProgresso(projeto)}%
+                        </div>
+                        <div class="progress" style={borderSize}>
+                            <div class="progress-bar progress-bar-striped progress-bar-animated " role="progressbar" style={width} aria-valuenow="10" aria-valuemin="0" aria-valuemax="100"></div>
                         </div>
                     </td>
                     <td class="text-center">
-                        <i data-tip="'V' para dentro do prazo e '!' para atrasado" className= { statusProjeto() ? "fa fa-exclamation text-danger" : "fa fa-check text-success" } aria-hidden="true"></i> 
-                        <ReactTooltip place="bottom" type="info" effect="solid"/>
+                        <div className="mt-3">
+                            {statusProjeto(projeto)?'Atrasado':'No Prazo'}
+                        </div>
 
                     </td>
                     <td class="text-center">
-                        <button className="btn btn-success" data-tip="Adicionar atividades ao projeto"
-                            onClick={() => this.addAtividades(projeto.id)}>
-                            <i className="fa fa-sitemap"></i>
-                        </button>
-                        <ReactTooltip place="bottom" type="info" effect="solid"/>
-                        <button data-tip="Alterar o projeto" className="btn btn-info ml-2"
-                            onClick={() => this.load(projeto)}>
-                            <i className="fa fa-pencil"></i>
-                        </button>
-                        <ReactTooltip place="bottom" type="info" effect="solid"/>
-                        <button data-tip="Excluir o projeto" className={projeto.progress > 0 ? "btn btn-light ml-2" : "btn btn-danger ml-2"} 
-                            disabled={projeto.progress > 0}
-                            onClick={() => this.remove(projeto)}>
-                            <i className="fa fa-trash"></i>
-                        </button>
-                        <ReactTooltip place="bottom" type="info" effect="solid"/>
+                        <div className="mt-2">
+                            <button className="btn btn-light" data-tip="Atividades do Projeto"
+                                onClick={() => this.addAtividades(projeto.id)}>
+                                <i className="fa fa-sitemap"></i>
+                            </button>
+                            <ReactTooltip place="bottom" type="info" effect="solid" />
+                            <button data-tip="Editar Projeto" className="btn btn-light ml-2"
+                                onClick={() => this.load(projeto)}>
+                                <i className="fa fa-pencil"></i>
+                            </button>
+                            <ReactTooltip place="bottom" type="info" effect="solid" />
+                            <button data-tip="Excluir Projeto" className="btn btn-light ml-2"
+
+                                onClick={() => this.delete(projeto)}>
+                                <i className="fa fa-trash-o"></i>
+                            </button>
+                            <ReactTooltip place="bottom" type="info" effect="solid" />
+                        </div>
                     </td>
                 </tr>
-
-                
-
             )
-                        
+
         })
     }
-
 
     render() {
         return (

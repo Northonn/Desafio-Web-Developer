@@ -3,6 +3,7 @@ import Main from '../template/Main'
 import axios from 'axios'
 import { Redirect } from 'react-router'
 import ReactTooltip from 'react-tooltip'
+var moment = require('moment'); // require
 
 
 const headerProps = {
@@ -11,49 +12,54 @@ const headerProps = {
     subtitle: 'Cadastro de Atividades de Projetos: Incluir, Listar, Alterar e Excluir'
 }
 
-const baseUrl = 'http://localhost:3002/atividades'
+const baseUrlAti = 'http://localhost:3001/atividades'
 const baseUrlPro = 'http://localhost:3001/projetos'
+
+const urlGetQtdeAtividade = 'http://localhost:3001/getQtdeAtividade'
+const urlGetQtdeAtividadeFinalizadas = 'http://localhost:3001/getQtdeAtividadeFinalizadas'
 
 
 const initialState = {
     atividade: { name: '', dataIni: '', dataFim: '', finalizada: '', idProjeto: '' },
-    projeto: { name: '', dataIni: '', dataFim: '', id: '' },
-    list: [],
-    listPro: []
+    projeto: { name: '', dataIni: '', dataFim: '', id: '', progresso: 0 },
+    list: []
 
 }
-
-let progresso = 0
 
 export default class AtividadesCrud extends Component {
 
     state = { ...initialState }
 
     componentWillMount() {
+        const urlPro = `${baseUrlPro}/${this.props.match.params.idProjeto}`
 
-        axios(baseUrl).then(resp => {
+        axios(urlPro).then(resp => {
+            this.setState({ projeto: resp.data })
+            const urlAti = `${baseUrlAti}/${this.props.match.params.idProjeto}`
+            axios(urlAti).then(resp => {
+                this.setState({ list: resp.data })
+                this.getUpdateProgress()
+            }).catch(resp => alert(resp.response.data))           
+        }).catch(resp => alert(resp.response.data))
+        
+    }
 
-            const filtraProjeto = obj => obj.idProjeto == this.props.match.params.idProjeto
-            const dados = resp.data
-            const projetoUnico = dados.filter(filtraProjeto)
-            let filtraAtividadesFinalizadas = obj => obj.finalizada
-            let qtdeAtividades = projetoUnico.length
-            let atividadesFinalizadas = projetoUnico.filter(filtraAtividadesFinalizadas)
-            let qtdeAtividadesFinalizadas = atividadesFinalizadas.length
+    getUpdateProgress(){
+        const urlQtdeAti = `${urlGetQtdeAtividade}/${this.props.match.params.idProjeto}`
+        const urlQtdeAtiFin = `${urlGetQtdeAtividadeFinalizadas}/${this.props.match.params.idProjeto}`
+        let qtdeAtividades = 0
+        let qtdeAtividadesFinalizadas = 0
+        let aux = 0
 
-            progresso = (qtdeAtividadesFinalizadas * 100) / qtdeAtividades
-
-            this.setState({ list: projetoUnico })
-
-            axios(baseUrlPro).then(resp => {
-
-                const filtraProjeto1 = obj => obj.id == this.props.match.params.idProjeto
-                const dados1 = resp.data
-                const dados2 = dados1.filter(filtraProjeto1)
-                dados2[0].progress = progresso
-                this.setState({ projeto: dados2[0] })
-            })
-        })
+        axios(urlQtdeAti).then(resp => {
+            qtdeAtividades = resp.data.QtdeAtividade
+            axios(urlQtdeAtiFin).then(resp => {
+            qtdeAtividadesFinalizadas = resp.data.QtdeAtividadeFinalizadas 
+            aux = Math.floor((qtdeAtividadesFinalizadas * 100) / qtdeAtividades,2)
+            this.state.projeto.progresso = isNaN(aux) ? 0 : aux
+            this.setState([])
+            }).catch(resp => alert(resp.response.data))          
+        }).catch(resp => alert(resp.response.data))
     }
 
     clear() {
@@ -61,35 +67,49 @@ export default class AtividadesCrud extends Component {
     }
 
     confirmar(ativ) {
-        ativ.finalizada = true
         const atividade = ativ
+        const idProjeto = atividade.idProjeto
 
-        const method = atividade.id ? 'put' : 'post' // Se o ID estiver definido usa put para alterar, caso contrario usa  post para incluir
-        const url = atividade.id ? `${baseUrl}/${atividade.id}` : baseUrl
+        atividade.idProjeto = idProjeto
+        atividade.finalizada = !ativ.finalizada
+        
+        const method = 'put'
+        const url = atividade.id ? `${baseUrlAti}/${idProjeto}/${atividade.id}` : `${baseUrlAti}/${idProjeto}`
+        
         axios[method](url, atividade).then(resp => {
-            const list = this.getUpdateList(resp.data)
-            this.setState({ atividade: initialState.atividade, list })
-        })
-        window.location.reload();
+            this.getUpdateList();
+            this.setState({ atividade: initialState.atividade })
+        }).catch(resp => alert(resp.response.data))
     }
 
     save() {
         const atividade = this.state.atividade
-        atividade.idProjeto = this.state.projeto.id
+        const idProjeto = this.state.projeto.id
+
+        atividade.idProjeto = idProjeto
+        atividade.finalizada = atividade.id ? this.state.atividade.finalizada : false
+        
         const method = atividade.id ? 'put' : 'post' // Se o ID estiver definido usa put para alterar, caso contrario usa  post para incluir
-        const url = atividade.id ? `${baseUrl}/${atividade.id}` : baseUrl
+        const url = atividade.id ? `${baseUrlAti}/${idProjeto}/${atividade.id}` : `${baseUrlAti}/${idProjeto}`
+
         axios[method](url, atividade).then(resp => {
-            const list = this.getUpdateList(resp.data)
-            this.setState({ atividade: initialState.atividade, list })
-        })
-        window.location.reload();
+            this.getUpdateList();
+            this.setState({ atividade: initialState.atividade })
+        }).catch(resp => alert(resp.response.data))
     }
 
-    getUpdateList(atividade, add = true) {
-        const list = this.state.list.filter(p => p.id !== atividade.id)
-        if (add)
-            list.unshift(atividade)
-        return list
+    delete(atividade) {
+        axios.delete(`${baseUrlAti}/${this.state.projeto.id}/${atividade.id}`).then(resp => {
+            this.getUpdateList()
+        }).catch(resp => alert(resp.response.data))
+    }    
+    
+    getUpdateList() {
+        const url = `${baseUrlAti}/${this.state.projeto.id}`
+        axios(url).then(resp => {
+            this.getUpdateProgress()
+            this.setState({ list: resp.data })
+        }).catch(resp => alert(resp.response.data))
     }
 
     updateField(event) {
@@ -104,17 +124,12 @@ export default class AtividadesCrud extends Component {
         this.setState({ atividade })
     }
 
-    remove(atividade) {
-        axios.delete(`${baseUrl}/${atividade.id}`).then(resp => {
-            const list = this.getUpdateList(atividade, false)
-            this.setState({ list })
-        })
-    }
-
     renderHeader() {
-        var prog = this.state.projeto.progress >=0 ? Math.floor(this.state.projeto.progress,2) : 0
-        let styleRed = { width: this.state.projeto.progress + '%' };
         let borderSize = { height: 2 + 'px' };
+        let styleRed = { width: 0 + '%' };
+        if (!isNaN(this.state.projeto.progresso))
+            styleRed = { width: this.state.projeto.progresso + '%' };
+
         if (this.state.redirect) {
             return <Redirect to="/Projetos" />
         } else {
@@ -125,12 +140,12 @@ export default class AtividadesCrud extends Component {
                         <div className="col-8 col-sm-8 col-md-9 col-lg-10 col-xl-11">
                             <div className="form-group">
                                 <h1>{this.state.projeto.name}</h1>
-                                {this.state.projeto.dataIni} a {this.state.projeto.dataFim}
+                                {moment(this.state.projeto.dataIni).format('DD/MM/YYYY')} a {moment(this.state.projeto.dataFim).format('DD/MM/YYYY')}
                             </div>
                         </div>
 
                         <div className="align-self-end text-right col-1 col-sm-1 col-md-1 col-lg-1 col-xl-1">                            
-                             <h1>{prog + '%'}</h1>
+                             <h1>{isNaN(this.state.projeto.progresso) ? 0+'%' : this.state.projeto.progresso+'%'}</h1>
                         </div>
 
                     </div>
@@ -150,6 +165,9 @@ export default class AtividadesCrud extends Component {
     }
 
     renderFields() {
+        const dtIni = moment(this.state.atividade.dataIni).format('YYYY-MM-DD')
+        const dtFim = moment(this.state.atividade.dataFim).format('YYYY-MM-DD')
+
         return (
             <div className="row mt-3 m-2">
                 <div className="col-12 col-sm-12 col-md-12 col-lg-12 col-xl-8">
@@ -172,7 +190,7 @@ export default class AtividadesCrud extends Component {
                         <label>Data Início </label>
                         <input type="Date" className="form-control"
                             name="dataIni"
-                            value={this.state.atividade.dataIni}
+                            value={dtIni}
                             onChange={e => this.updateField(e)}>
                         </input>
                     </div>
@@ -182,16 +200,16 @@ export default class AtividadesCrud extends Component {
                         <label>Data Término</label>
                         <input type="Date" className="form-control"
                             name="dataFim"
-                            value={this.state.atividade.dataFim}
+                            value={dtFim}
                             onChange={e => this.updateField(e)}>
                         </input>
                     </div>
-                </div>
-
-                <input type="checkbox" class="custom-control-input invisible" id="finalizada" name="finalizada"
+                    <input type="checkbox" class="custom-control-input" id="finalizada" name="finalizada"
                     checked={this.state.atividade.finalizada}
                     onChange={e => this.updateField(e)}
                 />
+                </div>
+
             </div>
         )
     }
@@ -201,7 +219,7 @@ export default class AtividadesCrud extends Component {
             <div className="row m-2">
                 <div className="col-12 d-flex ">
                     <button className="btn btn-primary"
-                        disabled={(!this.state.atividade.name || !this.state.atividade.dataIni || !this.state.atividade.dataFim)}
+                        /*disabled={(!this.state.atividade.name || !this.state.atividade.dataIni || !this.state.atividade.dataFim)}*/
                         onClick={e => this.save(e)}>
                         Salvar
                 </button>
@@ -249,35 +267,32 @@ export default class AtividadesCrud extends Component {
         return this.state.list.map(atividade => {
             return (
                 <tr key={atividade.id}>
-                    <td>{atividade.id}</td>
-                    <td>{atividade.idProjeto}</td>
-                    <td>{atividade.name}</td>
-                    <td class="text-center">{atividade.dataIni}</td>
-                    <td class="text-center">{atividade.dataFim}</td>
+                    <td><div className="mt-2">{atividade.id}</div></td>
+                    <td><div className="mt-2">{atividade.idProjeto}</div></td>
+                    <td><div className="mt-2">{atividade.name}</div></td>
+                    <td class="text-center"><div className="mt-2">{moment(atividade.dataIni).format('DD/MM/YYYY')}</div></td>
+                    <td class="text-center"><div className="mt-2">{moment(atividade.dataFim).format('DD/MM/YYYY')}</div></td>
                     <td class="text-center">
-                        <div class="custom-control">
-                            <i data-tip="'V' para Finalizada  'O' para em progresso " className={atividade.finalizada ? "fa fa-check text-success" : "fa fa-spinner"}></i>
+                        <div class="custom-control mt-2">
+                            <i data-tip={!atividade.finalizada ? "Pendente" : "Finalizada"} aria-hidden="true" className={atividade.finalizada ? "fa fa-star" : "fa fa-star-o"}></i>
                         </div>
                         <ReactTooltip place="bottom" type="info" effect="solid"/>
 
                     </td>
                     <td class="text-center">
-                        <button data-tip="Finaliza a Atividade" className={atividade.finalizada ? "btn btn-light ml-2" : "btn btn-success ml-2"}
-                            disabled={atividade.finalizada}
+                        <button data-tip="Altera o Status" className="btn btn-light ml-2"
                             onClick={e => this.confirmar(atividade)}>
-                            <i className="fa fa-check "></i>
+                            <i className={!atividade.finalizada ? "fa fa-star" : "fa fa-star-o"}></i>
                         </button>
                         <ReactTooltip place="bottom" type="info" effect="solid"/>
-                        <button data-tip="Alterar a atividade" className={atividade.finalizada ? "btn btn-light ml-2" : "btn btn-info ml-2"}
-                            disabled={atividade.finalizada}
+                        <button data-tip="Editar atividade" className="btn btn-light ml-2"
                             onClick={() => this.load(atividade)}>
                             <i className="fa fa-pencil"></i>
                         </button>
                         <ReactTooltip place="bottom" type="info" effect="solid"/>
-                        <button data-tip="Excluir a atividade" className={atividade.finalizada ? "btn btn-light ml-2" : "btn btn-danger ml-2"}
-                            disabled={atividade.finalizada}
-                            onClick={() => this.remove(atividade)}>
-                            <i className="fa fa-trash"></i>
+                        <button data-tip="Excluir atividade" className="btn btn-light ml-2"
+                            onClick={() => this.delete(atividade)}>
+                            <i className="fa fa-trash-o"></i>
                         </button>
                         <ReactTooltip place="bottom" type="info" effect="solid"/>
                     </td>
